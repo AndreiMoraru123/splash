@@ -89,7 +89,7 @@ class LauncherTests(unittest.TestCase):
                 launcher.parse_args(["serve", "--model", model]).model, model
             )
 
-    def test_only_serve_and_clients_are_public(self):
+    def test_only_serve_models_and_clients_are_public(self):
         for command in (
             "start",
             "stop",
@@ -97,7 +97,6 @@ class LauncherTests(unittest.TestCase):
             "logs",
             "doctor",
             "model",
-            "models",
             "uninstall",
         ):
             with self.subTest(command=command), mock.patch("sys.stderr", io.StringIO()):
@@ -1382,6 +1381,30 @@ class LauncherTests(unittest.TestCase):
             with (Path(temporary) / "serve-8000.lock").open("a+") as released:
                 fcntl.flock(released, fcntl.LOCK_EX | fcntl.LOCK_NB)
         install.assert_not_called()
+        execute.assert_not_called()
+
+
+    def test_models_lists_the_suggested_models_without_a_runtime(self):
+        with (
+            mock.patch.object(launcher, "_ensure_runtime") as runtime,
+            mock.patch("sys.stdout", io.StringIO()) as output,
+        ):
+            self.assertEqual(launcher.main(["models"]), 0)
+        runtime.assert_not_called()
+        for line in launcher.SUGGESTED.read_text().splitlines():
+            if line and not line.startswith("#"):
+                self.assertIn(line.split("\t")[0], output.getvalue())
+
+    def test_models_checks_one_model_with_the_installer_and_serves_nothing(self):
+        with (
+            mock.patch.object(launcher, "_ensure_runtime") as runtime,
+            mock.patch.object(launcher, "_run_held", return_value=1) as run,
+            mock.patch.object(launcher.os, "execve") as execute,
+        ):
+            self.assertEqual(launcher.main(["models", MODEL_ID]), 1)
+        runtime.assert_called_once_with()
+        command = run.call_args.args[0]
+        self.assertEqual(command[-2:], [MODEL_ID, "check"])
         execute.assert_not_called()
 
 

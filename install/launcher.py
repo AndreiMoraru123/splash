@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve in the foreground, or connect an installed agent to the local server."""
+"""Serve in the foreground, list or check models, or connect an installed agent to the local server."""
 
 import argparse
 import errno
@@ -31,6 +31,7 @@ from . import models as model_artifacts
 
 ROOT = paths.ROOT
 RUNTIME_DIR = paths.RUNTIME
+SUGGESTED = ROOT / "install/suggested-models.tsv"
 # Either stops `splash serve` wherever it is. The programs with handlers of
 # their own, the installer it runs and the server it executes, start with
 # them blocked, not ignored, until those handlers are in place, so one sent
@@ -329,6 +330,37 @@ def _renders_later_system(port):
     return all(outcome in ("native", "patched") for outcome in outcomes)
 
 
+def models(args):
+    """List the suggested models, or check that one loads: the installer's
+    metadata checks, with no weight download."""
+    if args.model is None:
+        names = {}
+        for line in SUGGESTED.read_text().splitlines():
+            if line and not line.startswith("#"):
+                model, name, memory, size, about = line.split("\t")
+                names.setdefault((name, about), []).append((model, memory, size))
+        for (name, about), variants in names.items():
+            print(f"{name}: {about}")
+            for model, memory, size in variants:
+                print(f"  {model}  ({memory} GB Mac, {size} GB download)")
+        print("\nsplash models OWNER/REPO[:VARIANT] checks whether another loads.")
+        return 0
+    selection = model_artifacts.Selection.of(paths.MODELS, args.model)
+    _ensure_runtime()
+    return _run_held(
+        [
+            str(paths.PYTHON),
+            str(ROOT / "install/models.py"),
+            "--models",
+            str(selection.models_root),
+            "--model",
+            selection.model,
+            "check",
+        ],
+        cwd=ROOT,
+    )
+
+
 def coding_client(args):
     path = clients.find_executable(args.command)
     listing = _request_json("/v1/models", port=args.port)
@@ -428,6 +460,8 @@ def parse_args(argv=None):
             "Quick start:\n"
             "  splash serve --model unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M\n"
             "  splash opencode  # in another terminal, after Ready\n\n"
+            "splash models lists the suggested models; splash models OWNER/REPO[:VARIANT]\n"
+            "checks whether another loads.\n\n"
             "Use splash serve --help for server settings. An agent command takes\n"
             "--port PORT for a server on another port and passes every other\n"
             "argument, including --help, to the installed agent. To pass the\n"
@@ -508,6 +542,20 @@ def parse_args(argv=None):
         help=f"HTTP port (default: SPLASH_PORT or {serve_options.DEFAULT_PORT})",
     )
     serve_options.add_serve_arguments(server, groups)
+    listing = commands.add_parser(
+        "models",
+        help="list the suggested models, or check that one loads",
+        description="Without a model, list the models Splash suggests. With one, "
+        "read its Hugging Face metadata and say whether Splash loads it and with "
+        "which draft; no weights are downloaded.",
+        allow_abbrev=False,
+    )
+    listing.add_argument(
+        "model",
+        nargs="?",
+        type=serve_options.parse_model_id,
+        metavar="OWNER/REPO[:VARIANT]",
+    )
     for name in clients.INSTALL_URLS:
         client = commands.add_parser(
             name,
@@ -528,6 +576,9 @@ def parse_args(argv=None):
             client_args = client_args[1:]
     else:
         args = parser.parse_args(argv)
+    if args.command == "models":
+        args.client_args = client_args
+        return args
     # An explicit --port wins; SPLASH_PORT is read only without one.
     args.explicit_port = args.port is not None
     if not args.explicit_port:
@@ -559,6 +610,8 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     try:
+        if args.command == "models":
+            return models(args)
         return serve(args) if args.command == "serve" else coding_client(args)
     except (LauncherError, clients.ClientError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)

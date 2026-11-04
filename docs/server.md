@@ -26,6 +26,12 @@ repositories need no login; private or gated ones need `HF_TOKEN` or `hf auth lo
 stops serving, and a second Ctrl+C stops the engine at once; stop before
 upgrading.
 
+`splash models` lists the models Splash suggests (`install/suggested-models.tsv`).
+`splash models OWNER/REPO[:VARIANT]` says whether another model loads, with the
+family, the download and the draft it would use, by the metadata checks a start
+makes before any download: a GGUF's header is read by range requests and no
+weights are fetched. It exits 1 with the engine's reason when the model is refused.
+
 ### Engine restarts and sleep
 
 An engine that fails is restarted at once. If it fails again within 60 s of

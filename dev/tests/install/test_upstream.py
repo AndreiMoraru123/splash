@@ -308,6 +308,32 @@ class UpstreamTest(unittest.TestCase):
             self.assertEqual(fake.requests, [(model, None)])
             self.assertEqual(fake.downloads, [f"{model}/config.json"])
 
+    def test_check_reports_the_family_and_draft_without_installing(self):
+        fake = fake_hub(self, self.cache)
+        fake.publish(MODEL, "b" * 40, lambda p: mlx_target(p, DENSE))
+        fake.requests.clear(), fake.downloads.clear()
+        chosen = selection(self.root)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            upstream.check(chosen)
+        self.assertRegex(
+            output.getvalue(), f"{MODEL} loads as Qwen3.8-27B [(]mlx-affine[)]"
+        )
+        draft = families.named("Qwen3.8-27B").draft_repo
+        self.assertIn(f"Draft: {draft}.", output.getvalue())
+        self.assertEqual(fake.requests, [(MODEL, None)])
+        self.assertFalse(chosen.link.exists())
+        self.assertNotIn(f"{MODEL}/model.safetensors", fake.downloads)
+
+    def test_check_refuses_what_a_start_refuses(self):
+        fake = fake_hub(self, self.cache)
+        fake.publish(
+            "someone/fine-tune",
+            "a" * 40,
+            lambda p: mlx_target(p, DENSE, changes={"num_hidden_layers": 48}),
+        )
+        with self.assertRaisesRegex(models.ModelError, "num_hidden_layers"):
+            upstream.check(selection(self.root, "someone/fine-tune"))
+
     def test_only_a_splash_manifest_is_refused_as_a_package(self):
         def target(root):
             mlx_target(root, DENSE)

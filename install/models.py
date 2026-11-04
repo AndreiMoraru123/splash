@@ -374,6 +374,9 @@ def parse_args(argv=None):
     )
     commands.add_parser("verify").add_argument("--full", action="store_true")
     commands.add_parser("link", help="print the selection link")
+    commands.add_parser(
+        "check", help="say whether the model loads, downloading no weights"
+    )
     return parser.parse_args(argv)
 
 
@@ -400,6 +403,8 @@ def main(argv=None):
             if args.json_progress:
                 hub.report_json_progress()
             upstream.prepare(selection)
+        elif args.command == "check":
+            upstream.check(selection)
         else:
             kind = installation_kind(selection.link)
             if kind == PACKAGE:

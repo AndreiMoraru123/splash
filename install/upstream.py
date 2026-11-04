@@ -483,6 +483,38 @@ def prepare(selection):
         _install_commit(selection, target, installed)
 
 
+def check(selection):
+    """Say whether selection's model loads, without installing it: the
+    metadata checks of a start (inspect_target) on the Hub's answer, which
+    read a GGUF's header by range requests and download no weights. Prints
+    the family, the target's format, its files' download in bytes and the
+    family's draft; a ModelError gives the reason a model is refused."""
+    repo = hub.Repository.resolve(selection.repo_id, selection.revision)
+    with (
+        hub.as_model_errors(f"cannot check {selection.model}"),
+        tempfile.TemporaryDirectory(prefix="splash-target-") as scratch,
+    ):
+        target = inspect_target(
+            repo, selection.variant, selection.language_only, Path(scratch)
+        )
+    family = target.family
+    names = set(target.files.values())
+    size = sum(repo.sizes[name][0] for name in names if name in repo.sizes)
+    vision = "disabled" if target.vision_format == "none" else "enabled"
+    print(
+        f"{selection.model} loads as {family.name} ({target.format}); "
+        f"{len(names)} file{'s' if len(names) != 1 else ''}, {size / 1e9:.1f} GB; "
+        f"vision {vision}."
+    )
+    if selection.draft_model or family.draft_repo:
+        print(f"Draft: {selection.draft_model or family.draft_repo}.")
+    else:
+        print(
+            f"No DFlash2 draft is released for {family.name}; "
+            "name one with --draft-model."
+        )
+
+
 def _start_installed(selection, target, installed):
     """Start the verified installation of the target's commit, assembled again
     first when its draft moved or this release changes it (_changes). The
